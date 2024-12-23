@@ -2,17 +2,19 @@
 #include <iostream>
 #include <cstring>
 #include <cmath>
-#include <thread>
-#include <chrono>
-#include <keyProcess.hpp>
+#include "keyProcess.hpp"
 
 #define elif else if
+#define baseOfLog 1.75
 
 #ifdef _WIN32
 #include <windows.h>
+void delay(int t){Sleep(t);}
 #else
+#include <unistd.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+void delay(int t){int us = t*1000;usleep(us);}
 #endif
 
 typedef struct dimensions{
@@ -54,6 +56,8 @@ dimensions getTerminalSize(){
 	return result;
 }
 
+dimensions windowSize = {-1, -1};
+
 colour getRGBFromHex(const char* hexcode){
 	int r=0,g=0,b=0;
 	if(hexcode[0]=='#')hexcode++;
@@ -92,15 +96,15 @@ void colourprintl(int* rgb,const char* string){
 
 void InitTree(int width,int height){
 	int i=0,j=0,k=0,half=(width-1)/2;
-	int woodHeight = int(log((double)width)/log((double)1.5)) - 4;
-	woodHeight=woodHeight<1?1:woodHeight;
+	int woodHeight=int(log((double)width)/log((double)baseOfLog))-4;
+	int woodWidth =woodHeight<0?1:(woodHeight*2)+1;
+	woodHeight=woodHeight<1?2:woodHeight+1;
 	bool isFirst=true;
 	if(width%2==0){cerr<<"Tree Width must be Odd number"<<endl;return;}
 	if(width<2){cerr<<"Tree Width must be Greater than 1"<<endl;return;}
-	dimensions windowSize=getTerminalSize();
 	int predictionOfTreeHeight=((half+1)*height)+woodHeight+2;
 	if(width>windowSize.width){cerr<<"Tree Width must be Smaller than the Size of Terminal Window"<<endl;return;}
-	// 뭐.... 높이에서 짤리면 알아서 스크롤해서 보겠지 난몰라~
+	if(predictionOfTreeHeight>windowSize.height){cerr<<"Tree Height must be Smaller than the Size of Terminal Window"<<endl;return;}
 
 	for(i=0;i<(windowSize.height-predictionOfTreeHeight)/2;i++)cout<<endl;
 	for(i=0;i<=half;i++){
@@ -112,7 +116,7 @@ void InitTree(int width,int height){
 			isFirst=false;
 		}
 	}
-	if(width<7){
+	if(woodWidth==1){
 		for(i=0;i<half+(windowSize.width-width)/2;i++)cout<<' ';
 		colourprintl("#401700", "Y");
 	}
@@ -120,7 +124,7 @@ void InitTree(int width,int height){
 		for(i=0;i<woodHeight+1;i++){
 			for(j=0;j<(half-1-woodHeight)+(windowSize.width-width)/2;j++)cout<<' ';
 			colourprint("#401700", "m");
-			for(j=0;j<(woodHeight*2)+1;j++)cout<<'W';
+			for(j=0;j<woodWidth;j++)cout<<'W';
 			cout<<'m'<<endl;
 		}
 	}
@@ -130,6 +134,21 @@ void InitTree(int width,int height){
 }
 void InitTree(int width){InitTree(width,1);}
 
+void getCursorPosition(dimensions &dim){
+	cout<<"\033[6n";
+	char buffer[32],ch;
+	int i=0;
+	while(1){
+		ch=getchar();
+		buffer[i++]=ch;
+		if(ch=='R'){
+			buffer[i]='\0';
+			break;
+		}
+	}
+	sscanf(buffer,"\033[%d;%dR",&dim.height,&dim.width);
+}
+void setCursorPosition(int x, int y){cout<<"\033["<<y<<";"<<x<<"H";}
 void cursorMove(char direction,int count){cout<<"\033["<<count<<direction;}
 void cursorMove(int direction, int count){cursorMove((char)(65+direction), count);}
 void cursorMove(char direction)          {cursorMove(direction,1);}
@@ -143,23 +162,51 @@ void cursorDown() {cursorDown(1); }
 void cursorRight(){cursorRight(1);}
 void cursorLeft() {cursorLeft(1); }
 
+dimensions treeOriginCalculator(int width,int height){
+	int half=(width-1)/2,woodHeight=int(log((double)width)/log((double)baseOfLog))-4;
+	woodHeight=woodHeight<1?1:woodHeight;
+	int predictionOfTreeHeight=((half+1)*height)+woodHeight+2;
+	dimensions result={((windowSize.width+1)/2)-half+1,((windowSize.height-predictionOfTreeHeight)/2)-1};
+	return result;
+}
+void treeModifier(int width,int height,int line,int order,colour rgb,const char* string){
+	int lineLength = (line/height)*2+1;
+	if(lineLength<=order){cerr<<"Order must be Smaller than line length"<<endl;return;}
+	dimensions origin=treeOriginCalculator(width,height);
+
+	setCursorPosition(((width-(lineLength-1))/2)+origin.width+order,line+origin.height);
+	for(int i=0;i<strlen(string);i++)cout<<"\b";
+	colourprint(rgb, string);
+	
+	cout.flush();
+	setCursorPosition(1,windowSize.height);
+	return;
+}
+
 void gameLoop(){
-	int fps = 15;
-	int mspf = 1000/fps; //Milli Seconds per Frame
-
-	int d=0;
-	cin>>d;
-	cursorMove(d, 1);
-
-	this_thread::sleep_for(chrono::milliseconds(mspf));
+	int fps=15;
+	int mspf=1000/fps; // ms per frame
+	//cursorMove(0, 1);
+	if(isKeyPressed())cout<<"asdf"<<endl;
+	cout.flush();
+	delay(mspf);
+	//this_thread::sleep_for(chrono::seconds(1));
+	gameLoop();
 	return;
 }
 
 int main(int argc, char* argv[]){
+	windowSize=getTerminalSize();
 	int width=27, height=1;
 	if(argc>1)sscanf(argv[1], "%d",&width);
 	if(argc>2)sscanf(argv[2], "%d",&height);
 	InitTree(width, height);
-	while(1)gameLoop();
+	colour rgb = {255, 0, 0};
+	while(1){
+		treeModifier(width, height, 0, 0, rgb, "*");
+		rgb = {rgb.b, rgb.r, rgb.g};
+		delay(500);
+	}
+	//gameLoop();
 	return 0;
 }

@@ -7,37 +7,53 @@ char getPressedKey() {
     return _getch();
 }
 #else
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+#include <sys/select.h>
 #include <termios.h>
-#include <fcntl.h>
-void enableNonBlockingMode() {
-    struct termios t;
-    tcgetattr(STDIN_FILENO, &t);
-    t.c_lflag &= ~(ICANON | ECHO);
-    tcsetattr(STDIN_FILENO, TCSANOW, &t);
-    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+
+struct termios orig_termios;
+
+void reset_terminal_mode(){
+    tcsetattr(0, TCSANOW, &orig_termios);
 }
 
-void restoreBlockingMode() {
-    struct termios t;
-    tcgetattr(STDIN_FILENO, &t);
-    t.c_lflag |= (ICANON | ECHO);
-    tcsetattr(STDIN_FILENO, TCSANOW, &t);
-    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
+void set_conio_terminal_mode(){
+    struct termios new_termios;
+
+    /* take two copies - one for now, one for later */
+    tcgetattr(0, &orig_termios);
+    memcpy(&new_termios, &orig_termios, sizeof(new_termios));
+
+    /* register cleanup handler, and set the new terminal mode */
+    atexit(reset_terminal_mode);
+    cfmakeraw(&new_termios);
+    tcsetattr(0, TCSANOW, &new_termios);
 }
 
+int kbhit(){
+    struct timeval tv = { 0L, 0L };
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(0, &fds);
+    return select(1, &fds, NULL, NULL, &tv) > 0;
+}
+
+int getch(){
+    int r;
+    unsigned char c;
+    if ((r = read(0, &c, sizeof(c))) < 0) {
+        return r;
+    } else {
+        return c;
+    }
+}
 bool isKeyPressed() {
-    char buf = 0;
-    ssize_t n = read(STDIN_FILENO, &buf, 1);
-    if (n > 0) return true;
-    return false;
+    return kbhit();
+}
+char getPressedKey() {
+    return getch();
 }
 
-char getPressedKey() {
-    char buf = 0;
-    read(STDIN_FILENO, &buf, 1);
-    return buf;
-}
 #endif
